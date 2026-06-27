@@ -38,6 +38,10 @@ function getDenoLocation() {
   return process.env.DENO_PATH;
 }
 
+function getCookiesPath() {
+  return process.env.YT_COOKIES_PATH;
+}
+
 function getSafeHeaderFilename(filename: string) {
   return filename.replace(/["\\\r\n]/g, "").replace(/[^\x20-\x7E]/g, "_");
 }
@@ -88,6 +92,7 @@ async function createPlaylistZip(mp3Paths: string[], tempDir: string) {
 function runConversion(url: string, outputTemplate: string, mode: ConversionMode) {
   const ffmpegLocation = getFfmpegLocation();
   const denoLocation = getDenoLocation();
+  const cookiesPath = getCookiesPath();
   const args = [
     url,
     "--extract-audio",
@@ -112,6 +117,10 @@ function runConversion(url: string, outputTemplate: string, mode: ConversionMode
 
   if (denoLocation) {
     args.push("--js-runtimes", `deno:${denoLocation}`);
+  }
+
+  if (cookiesPath) {
+    args.push("--cookies", cookiesPath);
   }
 
   return new Promise<{ success: boolean; output?: string; error?: string }>((resolve) => {

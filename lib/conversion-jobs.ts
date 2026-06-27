@@ -71,6 +71,10 @@ function getBaseArgs(url: string, outputTemplate: string, mode: ConversionMode) 
     args.push("--js-runtimes", `deno:${process.env.DENO_PATH}`);
   }
 
+  if (process.env.YT_COOKIES_PATH) {
+    args.push("--cookies", process.env.YT_COOKIES_PATH);
+  }
+
   return args;
 }
 
