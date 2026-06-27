@@ -18,6 +18,8 @@ type JobSnapshot = {
   filename?: string;
   size?: number;
   error?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type DownloadState = {
@@ -112,6 +114,75 @@ function triggerDownload(href: string, filename: string) {
   anchor.remove();
 }
 
+function clampProgress(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function getProgressCeiling(status: ConversionStatus, job: JobSnapshot | null) {
+  if (status === "complete" || job?.status === "complete") {
+    return 100;
+  }
+
+  if (status !== "converting") {
+    return 0;
+  }
+
+  const stage = job?.stage.toLowerCase() || "";
+
+  if (!job || job.status === "queued" || stage.includes("queued")) {
+    return 8;
+  }
+
+  if (stage.includes("starting")) {
+    return 14;
+  }
+
+  if (stage.includes("downloading")) {
+    return 86;
+  }
+
+  if (stage.includes("encoding")) {
+    return 94;
+  }
+
+  if (stage.includes("packaging") || stage.includes("finalizing")) {
+    return 98;
+  }
+
+  return 90;
+}
+
+function formatElapsed(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+
+  if (minutes === 0) {
+    return `${rest}s`;
+  }
+
+  return `${minutes}m ${rest.toString().padStart(2, "0")}s`;
+}
+
+function getStepState(progress: number, status: ConversionStatus, threshold: number) {
+  if (status === "complete") {
+    return "done";
+  }
+
+  if (status === "error") {
+    return progress >= threshold ? "done" : "idle";
+  }
+
+  if (progress >= threshold) {
+    return "done";
+  }
+
+  if (status === "converting" && progress >= Math.max(0, threshold - 25)) {
+    return "active";
+  }
+
+  return "idle";
+}
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [mode, setMode] = useState<ConversionMode>("single");
@@ -121,9 +192,22 @@ export default function Home() {
   const [job, setJob] = useState<JobSnapshot | null>(null);
   const [downloadedJobId, setDownloadedJobId] = useState<string | null>(null);
   const [pasteMessage, setPasteMessage] = useState<string | null>(null);
+  const [displayedProgress, setDisplayedProgress] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
 
   const canSubmit = useMemo(() => url.trim().length > 0 && status !== "converting", [status, url]);
   const activeJobId = job?.id;
+  const progressValue = Math.round(status === "complete" ? 100 : displayedProgress);
+  const elapsedSeconds =
+    status === "converting" && job?.createdAt
+      ? Math.max(0, Math.floor((now - Date.parse(job.createdAt)) / 1000))
+      : 0;
+  const steps = [
+    { label: "Queued", threshold: 5 },
+    { label: "Download", threshold: 35 },
+    { label: "Encode", threshold: 86 },
+    { label: "Ready", threshold: 100 },
+  ];
 
   useEffect(() => {
     return () => {
@@ -156,6 +240,7 @@ export default function Home() {
         setJob(nextJob);
 
         if (nextJob.status === "complete") {
+          setDisplayedProgress(100);
           setStatus("complete");
           return;
         }
@@ -177,13 +262,48 @@ export default function Home() {
     }
 
     void pollJob();
-    const interval = window.setInterval(() => void pollJob(), 1000);
+    const interval = window.setInterval(() => void pollJob(), 700);
 
     return () => {
       cancelled = true;
       window.clearInterval(interval);
     };
   }, [activeJobId, status]);
+
+  useEffect(() => {
+    if (status !== "converting") {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      const serverProgress = clampProgress(job?.progress || 0);
+      const ceiling = getProgressCeiling(status, job);
+
+      setDisplayedProgress((current) => {
+        const floor = Math.max(current, serverProgress);
+        const creepTarget = Math.min(ceiling, Math.max(serverProgress, floor + 0.45));
+        const distance = creepTarget - current;
+
+        if (distance <= 0) {
+          return clampProgress(floor);
+        }
+
+        return clampProgress(current + Math.min(Math.max(distance * 0.22, 0.18), 1.8));
+      });
+    }, 160);
+
+    return () => window.clearInterval(interval);
+  }, [job, status]);
+
+  useEffect(() => {
+    if (status !== "converting") {
+      return;
+    }
+
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+
+    return () => window.clearInterval(interval);
+  }, [status]);
 
   useEffect(() => {
     if (!job || job.status !== "complete" || downloadedJobId === job.id) {
@@ -240,6 +360,7 @@ export default function Home() {
     setStatus("error");
     setError("Conversion cancelled.");
     setJob(null);
+    setDisplayedProgress(0);
   }
 
   async function startFresh() {
@@ -259,6 +380,7 @@ export default function Home() {
     setJob(null);
     setDownloadedJobId(null);
     setPasteMessage(null);
+    setDisplayedProgress(0);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -266,6 +388,8 @@ export default function Home() {
     setStatus("converting");
     setError(null);
     setPasteMessage(null);
+    setDisplayedProgress(1);
+    setNow(Date.now());
 
     if (download?.href) {
       window.URL.revokeObjectURL(download.href);
@@ -295,50 +419,52 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#101010] text-zinc-100">
+    <main className="min-h-screen bg-[#0e0f12] text-zinc-100">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-5">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-300">
-              Experimental local converter
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
+              Audio workspace
             </p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-normal text-white sm:text-3xl">
+            <h1 className="mt-2 text-2xl font-semibold tracking-normal text-white sm:text-4xl">
               YouTube to MP3
             </h1>
           </div>
-          <div className="flex items-center gap-2 text-xs text-zinc-300">
-            <span className="border border-white/10 bg-white/[0.04] px-3 py-1.5">yt-dlp</span>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-300">
+            <span className="border border-cyan-300/20 bg-cyan-300/[0.08] px-3 py-1.5 text-cyan-100">yt-dlp</span>
             <span className="border border-white/10 bg-white/[0.04] px-3 py-1.5">FFmpeg</span>
-            <span className="border border-white/10 bg-white/[0.04] px-3 py-1.5">MP3 / ZIP</span>
+            <span className="border border-emerald-300/20 bg-emerald-300/[0.08] px-3 py-1.5 text-emerald-100">
+              MP3 / ZIP
+            </span>
           </div>
         </header>
 
         <section className="grid flex-1 items-start gap-6 py-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
           <form
             onSubmit={handleSubmit}
-            className="border border-white/10 bg-[#181818] p-5 shadow-2xl shadow-black/30 sm:p-6"
+            className="border border-white/10 bg-[#17191f] p-5 shadow-2xl shadow-black/30 sm:p-6"
           >
             <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center bg-red-500 text-white">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center bg-red-500 text-white shadow-lg shadow-red-500/20">
                 <LinkIcon />
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-white">Source video</h2>
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">
-                  Paste a public YouTube URL, convert one video to MP3, or package a playlist as a ZIP.
+                  Paste a YouTube URL and choose the output you want.
                 </p>
               </div>
             </div>
 
             <div className="mt-6 space-y-3">
               <p className="text-sm font-medium text-zinc-200">Conversion mode</p>
-              <div className="grid grid-cols-2 border border-white/12 bg-black p-1">
+              <div className="grid grid-cols-2 border border-white/12 bg-[#0d0f13] p-1">
                 <button
                   type="button"
                   onClick={() => setMode("single")}
                   disabled={status === "converting"}
                   className={`min-h-11 px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                    mode === "single" ? "bg-red-500 text-white" : "text-zinc-300 hover:bg-white/[0.06]"
+                    mode === "single" ? "bg-red-500 text-white shadow-sm shadow-red-500/30" : "text-zinc-300 hover:bg-white/[0.06]"
                   }`}
                 >
                   Single video
@@ -348,7 +474,7 @@ export default function Home() {
                   onClick={() => setMode("playlist")}
                   disabled={status === "converting"}
                   className={`min-h-11 px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                    mode === "playlist" ? "bg-red-500 text-white" : "text-zinc-300 hover:bg-white/[0.06]"
+                    mode === "playlist" ? "bg-red-500 text-white shadow-sm shadow-red-500/30" : "text-zinc-300 hover:bg-white/[0.06]"
                   }`}
                 >
                   Playlist ZIP
@@ -376,7 +502,7 @@ export default function Home() {
                       ? "https://www.youtube.com/watch?v=..."
                       : "https://www.youtube.com/playlist?list=..."
                   }
-                  className="min-h-12 flex-1 border border-white/12 bg-black px-4 text-base text-white outline-none placeholder:text-zinc-600 focus:border-red-400"
+                  className="min-h-12 flex-1 border border-white/12 bg-[#0d0f13] px-4 text-base text-white outline-none placeholder:text-zinc-600 focus:border-cyan-300"
                   required
                   disabled={status === "converting"}
                 />
@@ -432,8 +558,15 @@ export default function Home() {
             </div>
           </form>
 
-          <aside className="border border-white/10 bg-[#181818] p-5 sm:p-6">
-            <h2 className="text-lg font-semibold text-white">Status</h2>
+          <aside className="border border-white/10 bg-[#17191f] p-5 sm:p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-white">Status</h2>
+              {status === "converting" ? (
+                <span className="border border-amber-300/30 bg-amber-300/10 px-2.5 py-1 text-xs font-semibold text-amber-100">
+                  {formatElapsed(elapsedSeconds)}
+                </span>
+              ) : null}
+            </div>
 
             <div className="mt-5 space-y-4">
               <div
@@ -468,20 +601,40 @@ export default function Home() {
                 </p>
               </div>
 
-              {job && status === "converting" ? (
+              {status === "converting" ? (
                 <div className="border border-white/10 bg-black/25 p-4">
                   <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="font-medium text-white">{job.stage}</span>
-                    <span className="text-zinc-300">{Math.round(job.progress)}%</span>
+                    <span className="font-medium text-white">{job?.stage || "Starting"}</span>
+                    <span className="font-semibold text-cyan-100">{progressValue}%</span>
                   </div>
-                  <div className="mt-3 h-2 bg-white/10">
+                  <div className="mt-3 h-2.5 overflow-hidden bg-white/10">
                     <div
-                      className="h-full bg-red-500 transition-all"
-                      style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }}
+                      className="h-full bg-gradient-to-r from-red-500 via-amber-300 to-cyan-300 transition-[width] duration-300 ease-out"
+                      style={{ width: `${progressValue}%` }}
                     />
                   </div>
+                  <div className="mt-4 grid grid-cols-4 gap-2">
+                    {steps.map((step) => {
+                      const stepState = getStepState(progressValue, status, step.threshold);
+
+                      return (
+                        <div
+                          key={step.label}
+                          className={`min-h-12 border px-2 py-2 text-center text-xs ${
+                            stepState === "done"
+                              ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100"
+                              : stepState === "active"
+                                ? "border-amber-300/40 bg-amber-300/10 text-amber-100"
+                                : "border-white/10 text-zinc-500"
+                          }`}
+                        >
+                          {step.label}
+                        </div>
+                      );
+                    })}
+                  </div>
                   <div className="mt-4 space-y-2 text-sm text-zinc-400">
-                    {job.playlistPosition && job.playlistTotal ? (
+                    {job?.playlistPosition && job.playlistTotal ? (
                       <div className="flex items-center justify-between gap-3 border border-white/10 px-3 py-2">
                         <span>Playlist item</span>
                         <span className="font-medium text-zinc-100">
@@ -489,7 +642,7 @@ export default function Home() {
                         </span>
                       </div>
                     ) : null}
-                    {job.currentItem ? (
+                    {job?.currentItem ? (
                       <div className="border border-white/10 px-3 py-2">
                         <p className="text-zinc-400">Current file</p>
                         <p className="mt-1 break-all font-medium text-zinc-100">{job.currentItem}</p>
