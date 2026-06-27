@@ -43,7 +43,7 @@ function getYtDlpCommand() {
   return process.env.YT_DLP_PATH || (process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp");
 }
 
-function getBaseArgs(url: string, outputTemplate: string, mode: ConversionMode) {
+function getBaseArgs(url: string, outputTemplate: string, mode: ConversionMode, cookiesPath?: string) {
   const args = [
     url,
     "--extract-audio",
@@ -71,11 +71,22 @@ function getBaseArgs(url: string, outputTemplate: string, mode: ConversionMode) 
     args.push("--js-runtimes", `deno:${process.env.DENO_PATH}`);
   }
 
-  if (process.env.YT_COOKIES_PATH) {
-    args.push("--cookies", process.env.YT_COOKIES_PATH);
+  if (cookiesPath) {
+    args.push("--cookies", cookiesPath);
   }
 
   return args;
+}
+
+async function prepareCookiesFile(tempDir: string) {
+  if (!process.env.YT_COOKIES_PATH) {
+    return undefined;
+  }
+
+  const cookiesPath = path.join(tempDir, "cookies.txt");
+  await fs.copyFile(process.env.YT_COOKIES_PATH, cookiesPath);
+
+  return cookiesPath;
 }
 
 function getSafeHeaderFilename(filename: string) {
@@ -282,7 +293,8 @@ async function runJob(job: ConversionJob, url: string) {
     job.mode === "playlist"
       ? path.join(job.tempDir, "%(playlist_index|00)s - %(title).200B.%(ext)s")
       : path.join(job.tempDir, "%(title).200B.%(ext)s");
-  const args = getBaseArgs(url, outputTemplate, job.mode);
+  const cookiesPath = await prepareCookiesFile(job.tempDir);
+  const args = getBaseArgs(url, outputTemplate, job.mode, cookiesPath);
 
   updateJob(job, {
     status: "running",

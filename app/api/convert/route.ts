@@ -89,10 +89,9 @@ async function createPlaylistZip(mp3Paths: string[], tempDir: string) {
   return zip.generateAsync({ type: "nodebuffer", compression: "STORE" });
 }
 
-function runConversion(url: string, outputTemplate: string, mode: ConversionMode) {
+function runConversion(url: string, outputTemplate: string, mode: ConversionMode, cookiesPath?: string) {
   const ffmpegLocation = getFfmpegLocation();
   const denoLocation = getDenoLocation();
-  const cookiesPath = getCookiesPath();
   const args = [
     url,
     "--extract-audio",
@@ -149,6 +148,19 @@ function runConversion(url: string, outputTemplate: string, mode: ConversionMode
   });
 }
 
+async function prepareCookiesFile(tempDir: string) {
+  const sourceCookiesPath = getCookiesPath();
+
+  if (!sourceCookiesPath) {
+    return undefined;
+  }
+
+  const cookiesPath = path.join(tempDir, "cookies.txt");
+  await fs.copyFile(sourceCookiesPath, cookiesPath);
+
+  return cookiesPath;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -174,7 +186,8 @@ export async function POST(request: NextRequest) {
       mode === "playlist"
         ? path.join(tempDir, "%(playlist_index|00)s - %(title).200B.%(ext)s")
         : path.join(tempDir, "%(title).200B.%(ext)s");
-    const result = await runConversion(rawUrl, outputTemplate, mode);
+    const cookiesPath = await prepareCookiesFile(tempDir);
+    const result = await runConversion(rawUrl, outputTemplate, mode, cookiesPath);
     const mp3Paths = await findMp3Files(tempDir);
 
     if (!result.success || mp3Paths.length === 0) {
