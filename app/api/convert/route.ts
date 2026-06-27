@@ -116,6 +116,7 @@ function runConversion(url: string, outputTemplate: string, mode: ConversionMode
 
   if (denoLocation) {
     args.push("--js-runtimes", `deno:${denoLocation}`);
+    args.push("--remote-components", "ejs:github");
   }
 
   if (cookiesPath) {

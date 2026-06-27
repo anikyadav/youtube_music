@@ -69,6 +69,7 @@ function getBaseArgs(url: string, outputTemplate: string, mode: ConversionMode, 
 
   if (process.env.DENO_PATH) {
     args.push("--js-runtimes", `deno:${process.env.DENO_PATH}`);
+    args.push("--remote-components", "ejs:github");
   }
 
   if (cookiesPath) {
