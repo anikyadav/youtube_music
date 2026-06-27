@@ -84,7 +84,15 @@ async function prepareCookiesFile(tempDir: string) {
   }
 
   const cookiesPath = path.join(tempDir, "cookies.txt");
-  await fs.copyFile(process.env.YT_COOKIES_PATH, cookiesPath);
+  try {
+    await fs.copyFile(process.env.YT_COOKIES_PATH, cookiesPath);
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      throw new Error(`Cookies file was not found at ${process.env.YT_COOKIES_PATH}. Check the Render secret file name and YT_COOKIES_PATH value.`);
+    }
+
+    throw error;
+  }
 
   return cookiesPath;
 }
