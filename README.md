@@ -45,6 +45,16 @@ This is an experimental local utility. Only download media when you have the rig
 
 Playlist conversion can take a while because every playlist item is downloaded and encoded before the ZIP is returned.
 
+## Deployment tuning
+
+The server uses `yt-dlp` and FFmpeg, so conversion speed depends heavily on CPU and network quality. Small cloud instances will usually be slower than a local PC.
+
+Optional environment variables:
+
+- `YT_AUDIO_QUALITY`: MP3 quality passed to `yt-dlp`; defaults to `2`. Use `0` for highest quality, or a larger value for faster/smaller files.
+- `YT_CONCURRENT_FRAGMENTS`: parallel fragment downloads; defaults to `4`.
+- `YT_COOKIES_PATH`: path to a server-side YouTube cookies file, for example `/etc/secrets/cookies.txt`.
+
 The UI uses a job-based API:
 
 - `POST /api/jobs` starts a conversion.

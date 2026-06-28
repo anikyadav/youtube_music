@@ -43,14 +43,27 @@ function getYtDlpCommand() {
   return process.env.YT_DLP_PATH || (process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp");
 }
 
+function getAudioQuality() {
+  return process.env.YT_AUDIO_QUALITY || "2";
+}
+
+function getConcurrentFragments() {
+  return process.env.YT_CONCURRENT_FRAGMENTS || "4";
+}
+
 function getBaseArgs(url: string, outputTemplate: string, mode: ConversionMode, cookiesPath?: string) {
   const args = [
     url,
+    "--format",
+    "bestaudio/best",
     "--extract-audio",
     "--audio-format",
     "mp3",
     "--audio-quality",
-    "0",
+    getAudioQuality(),
+    "--concurrent-fragments",
+    getConcurrentFragments(),
+    "--no-mtime",
     "--restrict-filenames",
     "--newline",
     "--output",

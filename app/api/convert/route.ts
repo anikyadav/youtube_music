@@ -42,6 +42,14 @@ function getCookiesPath() {
   return process.env.YT_COOKIES_PATH;
 }
 
+function getAudioQuality() {
+  return process.env.YT_AUDIO_QUALITY || "2";
+}
+
+function getConcurrentFragments() {
+  return process.env.YT_CONCURRENT_FRAGMENTS || "4";
+}
+
 function getSafeHeaderFilename(filename: string) {
   return filename.replace(/["\\\r\n]/g, "").replace(/[^\x20-\x7E]/g, "_");
 }
@@ -94,11 +102,16 @@ function runConversion(url: string, outputTemplate: string, mode: ConversionMode
   const denoLocation = getDenoLocation();
   const args = [
     url,
+    "--format",
+    "bestaudio/best",
     "--extract-audio",
     "--audio-format",
     "mp3",
     "--audio-quality",
-    "0",
+    getAudioQuality(),
+    "--concurrent-fragments",
+    getConcurrentFragments(),
+    "--no-mtime",
     "--restrict-filenames",
     "--output",
     outputTemplate,
