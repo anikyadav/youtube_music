@@ -24,3 +24,133 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.conversion-disc {
+  animation: conversion-disc-pulse 1.9s ease-in-out infinite;
+}
+
+.conversion-button-icon {
+  filter: drop-shadow(0 0 10px rgba(103, 232, 249, 0.45));
+}
+
+.conversion-button-ring {
+  animation: conversion-button-spin 850ms linear infinite;
+}
+
+.conversion-button-glow {
+  animation: conversion-button-glow 850ms linear infinite;
+}
+
+.conversion-orbit {
+  border-radius: 9999px;
+  animation: conversion-orbit 4.8s linear infinite;
+}
+
+.conversion-orbit-delayed {
+  animation-duration: 3.6s;
+  animation-direction: reverse;
+}
+
+.conversion-meter-bar {
+  animation: conversion-meter 900ms ease-in-out infinite alternate;
+  transform-origin: bottom;
+}
+
+.conversion-progress-fill {
+  box-shadow: 0 0 22px rgba(103, 232, 249, 0.28);
+}
+
+.conversion-progress-shine {
+  animation: conversion-shine 1.25s ease-in-out infinite;
+  filter: blur(10px);
+  transform: skewX(-20deg);
+}
+
+.conversion-step-pulse {
+  animation: conversion-step-pulse 1s ease-in-out infinite;
+}
+
+@keyframes conversion-disc-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(103, 232, 249, 0.14), 0 18px 45px rgba(6, 182, 212, 0.18);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(103, 232, 249, 0), 0 24px 55px rgba(239, 68, 68, 0.2);
+    transform: scale(1.04);
+  }
+}
+
+@keyframes conversion-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes conversion-button-glow {
+  from {
+    transform: rotate(0deg) translateX(10px) scale(0.8);
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+  to {
+    transform: rotate(360deg) translateX(10px) scale(0.8);
+    opacity: 0.75;
+  }
+}
+
+@keyframes conversion-orbit {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg) scaleX(1.2) scaleY(0.72);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(360deg) scaleX(1.2) scaleY(0.72);
+  }
+}
+
+@keyframes conversion-meter {
+  from {
+    opacity: 0.55;
+    transform: scaleY(0.45);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes conversion-shine {
+  from {
+    left: -7rem;
+  }
+  to {
+    left: calc(100% + 7rem);
+  }
+}
+
+@keyframes conversion-step-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scaleX(0.5);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversion-button-ring,
+  .conversion-button-glow,
+  .conversion-disc,
+  .conversion-orbit,
+  .conversion-meter-bar,
+  .conversion-progress-shine,
+  .conversion-step-pulse {
+    animation: none;
+  }
+}

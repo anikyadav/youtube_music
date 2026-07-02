@@ -6,6 +6,7 @@ Experimental Next.js app that lets you paste a YouTube URL, converts audio on th
 
 - Convert a single YouTube video to an MP3 named from the video title.
 - Convert a YouTube playlist into one ZIP containing title-named MP3 files.
+- Pick Default, High, or Best MP3 quality for each conversion.
 - Keep completed downloads available in the browser for repeat download until a new conversion starts.
 - Show conversion progress while `yt-dlp` downloads and encodes audio.
 - Cancel an active conversion from the UI.
@@ -51,7 +52,7 @@ The server uses `yt-dlp` and FFmpeg, so conversion speed depends heavily on CPU 
 
 Optional environment variables:
 
-- `YT_AUDIO_QUALITY`: MP3 quality passed to `yt-dlp`; defaults to `2`. Use `0` for highest quality, or a larger value for faster/smaller files.
+- `YT_AUDIO_QUALITY`: fallback MP3 quality passed to `yt-dlp` for API calls without a quality preset; defaults to `5`. The UI presets use Default `5`, High `2`, and Best `0`.
 - `YT_CONCURRENT_FRAGMENTS`: parallel fragment downloads; defaults to `4`.
 - `YT_COOKIES_PATH`: path to a server-side YouTube cookies file, for example `/etc/secrets/cookies.txt`.
 

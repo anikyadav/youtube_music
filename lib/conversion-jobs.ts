@@ -5,7 +5,15 @@ import path from "node:path";
 import JSZip from "jszip";
 
 export type ConversionMode = "single" | "playlist";
+export type AudioQuality = "default" | "high" | "best";
 export type JobStatus = "queued" | "running" | "complete" | "error" | "cancelled";
+
+const AUDIO_QUALITY_VALUES: Record<AudioQuality, string> = {
+  default: "5",
+  high: "2",
+  best: "0",
+};
+const DEFAULT_AUDIO_QUALITY: AudioQuality = "best";
 
 export type ConversionJobSnapshot = {
   id: string;
@@ -33,6 +41,7 @@ type ConversionJob = ConversionJobSnapshot & {
 
 type CreateJobInput = {
   mode: ConversionMode;
+  quality?: AudioQuality;
   url: string;
 };
 
@@ -43,15 +52,23 @@ function getYtDlpCommand() {
   return process.env.YT_DLP_PATH || (process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp");
 }
 
-function getAudioQuality() {
-  return process.env.YT_AUDIO_QUALITY || "2";
+function getFallbackAudioQuality() {
+  return process.env.YT_AUDIO_QUALITY || AUDIO_QUALITY_VALUES[DEFAULT_AUDIO_QUALITY];
+}
+
+export function normalizeAudioQuality(value: unknown): AudioQuality {
+  return value === "best" || value === "high" || value === "default" ? value : DEFAULT_AUDIO_QUALITY;
+}
+
+function getAudioQualityValue(quality?: AudioQuality) {
+  return quality ? AUDIO_QUALITY_VALUES[quality] : getFallbackAudioQuality();
 }
 
 function getConcurrentFragments() {
   return process.env.YT_CONCURRENT_FRAGMENTS || "4";
 }
 
-function getBaseArgs(url: string, outputTemplate: string, mode: ConversionMode, cookiesPath?: string) {
+function getBaseArgs(url: string, outputTemplate: string, mode: ConversionMode, quality?: AudioQuality, cookiesPath?: string) {
   const args = [
     url,
     "--format",
@@ -60,7 +77,7 @@ function getBaseArgs(url: string, outputTemplate: string, mode: ConversionMode, 
     "--audio-format",
     "mp3",
     "--audio-quality",
-    getAudioQuality(),
+    getAudioQualityValue(quality),
     "--concurrent-fragments",
     getConcurrentFragments(),
     "--no-mtime",
@@ -310,13 +327,13 @@ async function finishJob(job: ConversionJob) {
   });
 }
 
-async function runJob(job: ConversionJob, url: string) {
+async function runJob(job: ConversionJob, url: string, quality?: AudioQuality) {
   const outputTemplate =
     job.mode === "playlist"
       ? path.join(job.tempDir, "%(playlist_index|00)s - %(title).200B.%(ext)s")
       : path.join(job.tempDir, "%(title).200B.%(ext)s");
   const cookiesPath = await prepareCookiesFile(job.tempDir);
-  const args = getBaseArgs(url, outputTemplate, job.mode, cookiesPath);
+  const args = getBaseArgs(url, outputTemplate, job.mode, quality, cookiesPath);
 
   updateJob(job, {
     status: "running",
@@ -331,6 +348,16 @@ async function runJob(job: ConversionJob, url: string) {
     });
     let stderr = "";
     let stdout = "";
+    const encodeProgressInterval = setInterval(() => {
+      if (job.status !== "running" || job.stage !== "Encoding MP3") {
+        return;
+      }
+
+      updateJob(job, {
+        progress: Math.min(94, Math.max(job.progress + 1, 87)),
+        message: "Converting audio to MP3. This can take a bit on longer videos.",
+      });
+    }, 3000);
 
     updateJob(job, { process: child });
 
@@ -346,9 +373,13 @@ async function runJob(job: ConversionJob, url: string) {
       text.split(/\r?\n/).forEach((line) => applyProgressLine(job, line));
     });
 
-    child.on("error", reject);
+    child.on("error", (error) => {
+      clearInterval(encodeProgressInterval);
+      reject(error);
+    });
 
     child.on("close", (code) => {
+      clearInterval(encodeProgressInterval);
       updateJob(job, { process: undefined });
 
       if (job.status === "cancelled") {
@@ -390,7 +421,7 @@ export async function createConversionJob(input: CreateJobInput) {
   };
 
   jobs.set(job.id, job);
-  void runJob(job, input.url).catch(async (error: unknown) => {
+  void runJob(job, input.url, input.quality).catch(async (error: unknown) => {
     if (job.status === "cancelled") {
       await cleanupJob(job);
       return;

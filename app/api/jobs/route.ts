@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cleanupExpiredJobs, createConversionJob, type ConversionMode } from "@/lib/conversion-jobs";
+import {
+  cleanupExpiredJobs,
+  createConversionJob,
+  normalizeAudioQuality,
+  type AudioQuality,
+  type ConversionMode,
+} from "@/lib/conversion-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +28,8 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const rawUrl = typeof body?.url === "string" ? body.url.trim() : "";
   const mode: ConversionMode = body?.mode === "playlist" ? "playlist" : "single";
+  const quality: AudioQuality | undefined =
+    typeof body?.quality === "undefined" ? undefined : normalizeAudioQuality(body.quality);
 
   if (!rawUrl) {
     return NextResponse.json({ error: "Please paste a YouTube URL to continue." }, { status: 400 });
@@ -34,7 +42,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const job = await createConversionJob({ url: rawUrl, mode });
+  const job = await createConversionJob({ url: rawUrl, mode, quality });
 
   return NextResponse.json(job, { status: 202 });
 }

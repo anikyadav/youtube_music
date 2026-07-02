@@ -10,6 +10,14 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 1800;
 
 type ConversionMode = "single" | "playlist";
+type AudioQuality = "default" | "high" | "best";
+
+const AUDIO_QUALITY_VALUES: Record<AudioQuality, string> = {
+  default: "5",
+  high: "2",
+  best: "0",
+};
+const DEFAULT_AUDIO_QUALITY: AudioQuality = "best";
 
 function isYouTubeUrl(value: string) {
   try {
@@ -42,8 +50,16 @@ function getCookiesPath() {
   return process.env.YT_COOKIES_PATH;
 }
 
-function getAudioQuality() {
-  return process.env.YT_AUDIO_QUALITY || "2";
+function getFallbackAudioQuality() {
+  return process.env.YT_AUDIO_QUALITY || AUDIO_QUALITY_VALUES[DEFAULT_AUDIO_QUALITY];
+}
+
+function normalizeAudioQuality(value: unknown): AudioQuality {
+  return value === "best" || value === "high" || value === "default" ? value : DEFAULT_AUDIO_QUALITY;
+}
+
+function getAudioQualityValue(quality?: AudioQuality) {
+  return quality ? AUDIO_QUALITY_VALUES[quality] : getFallbackAudioQuality();
 }
 
 function getConcurrentFragments() {
@@ -97,7 +113,7 @@ async function createPlaylistZip(mp3Paths: string[], tempDir: string) {
   return zip.generateAsync({ type: "nodebuffer", compression: "STORE" });
 }
 
-function runConversion(url: string, outputTemplate: string, mode: ConversionMode, cookiesPath?: string) {
+function runConversion(url: string, outputTemplate: string, mode: ConversionMode, quality?: AudioQuality, cookiesPath?: string) {
   const ffmpegLocation = getFfmpegLocation();
   const denoLocation = getDenoLocation();
   const args = [
@@ -108,7 +124,7 @@ function runConversion(url: string, outputTemplate: string, mode: ConversionMode
     "--audio-format",
     "mp3",
     "--audio-quality",
-    getAudioQuality(),
+    getAudioQualityValue(quality),
     "--concurrent-fragments",
     getConcurrentFragments(),
     "--no-mtime",
@@ -188,6 +204,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const rawUrl = typeof body?.url === "string" ? body.url.trim() : "";
     const mode: ConversionMode = body?.mode === "playlist" ? "playlist" : "single";
+    const quality =
+      typeof body?.quality === "undefined" ? undefined : normalizeAudioQuality(body.quality);
 
     if (!rawUrl) {
       return NextResponse.json(
@@ -209,7 +227,7 @@ export async function POST(request: NextRequest) {
         ? path.join(tempDir, "%(playlist_index|00)s - %(title).200B.%(ext)s")
         : path.join(tempDir, "%(title).200B.%(ext)s");
     const cookiesPath = await prepareCookiesFile(tempDir);
-    const result = await runConversion(rawUrl, outputTemplate, mode, cookiesPath);
+    const result = await runConversion(rawUrl, outputTemplate, mode, quality, cookiesPath);
     const mp3Paths = await findMp3Files(tempDir);
 
     if (!result.success || mp3Paths.length === 0) {

@@ -4,6 +4,14 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type ConversionStatus = "idle" | "converting" | "complete" | "error";
 type ConversionMode = "single" | "playlist";
+type AudioQuality = "default" | "high" | "best";
+
+const audioQualityOptions: Array<{ label: string; value: AudioQuality }> = [
+  { label: "Default", value: "default" },
+  { label: "High", value: "high" },
+  { label: "Best", value: "best" },
+];
+const defaultAudioQuality: AudioQuality = "best";
 
 type JobSnapshot = {
   id: string;
@@ -81,6 +89,21 @@ function ClipboardIcon() {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+function ConvertingIcon() {
+  return (
+    <span className="conversion-button-icon relative inline-flex h-6 w-6 shrink-0 items-center justify-center">
+      <span className="conversion-button-ring absolute inset-0 rounded-full border-2 border-white/25 border-t-cyan-100 border-r-amber-200" />
+      <span className="conversion-button-glow absolute h-2 w-2 rounded-full bg-cyan-100 shadow-[0_0_10px_rgba(165,243,252,0.95)]" />
+      <svg aria-hidden="true" className="relative h-4 w-4 text-white" viewBox="0 0 24 24" fill="none">
+        <path
+          d="M9 18.5a2.5 2.5 0 1 1-1.2-2.14V6.5l9-2v9.5a2.5 2.5 0 1 1-1.2-2.14V7.5l-5.8 1.29v9.71Z"
+          fill="currentColor"
+        />
+      </svg>
+    </span>
   );
 }
 
@@ -183,9 +206,41 @@ function getStepState(progress: number, status: ConversionStatus, threshold: num
   return "idle";
 }
 
+function ConversionPulse({ progress }: { progress: number }) {
+  const bars = [42, 66, 50, 82, 58, 74, 46, 64, 38, 70, 54, 78];
+
+  return (
+    <div className="relative min-h-40 overflow-hidden border border-white/10 bg-[#0d0f13] p-4">
+      <div className="conversion-orbit absolute left-1/2 top-1/2 h-28 w-28 -translate-x-1/2 -translate-y-1/2 border border-cyan-300/25" />
+      <div className="conversion-orbit conversion-orbit-delayed absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 border border-red-400/25" />
+      <div className="relative z-10 flex min-h-32 flex-col items-center justify-center gap-4">
+        <div className="conversion-disc flex h-20 w-20 items-center justify-center rounded-full border border-white/15 bg-black/50 shadow-2xl shadow-cyan-500/20">
+          <div className="h-8 w-8 rounded-full border border-cyan-200/50 bg-cyan-200/15" />
+        </div>
+        <div className="flex h-12 w-full max-w-72 items-end justify-center gap-1.5">
+          {bars.map((height, index) => (
+            <span
+              key={`${height}-${index}`}
+              className="conversion-meter-bar w-2 bg-gradient-to-t from-red-500 via-amber-300 to-cyan-200"
+              style={{
+                height: `${height}%`,
+                animationDelay: `${index * 85}ms`,
+              }}
+            />
+          ))}
+        </div>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-100">
+          {progress < 20 ? "Warming engine" : progress < 86 ? "Reading audio stream" : "Polishing file"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [mode, setMode] = useState<ConversionMode>("single");
+  const [quality, setQuality] = useState<AudioQuality>(defaultAudioQuality);
   const [status, setStatus] = useState<ConversionStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [download, setDownload] = useState<DownloadState | null>(null);
@@ -374,6 +429,7 @@ export default function Home() {
 
     setUrl("");
     setMode("single");
+    setQuality(defaultAudioQuality);
     setStatus("idle");
     setError(null);
     setDownload(null);
@@ -402,7 +458,7 @@ export default function Home() {
       const response = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, mode }),
+        body: JSON.stringify({ url, mode, quality }),
       });
 
       if (!response.ok) {
@@ -488,6 +544,25 @@ export default function Home() {
             </div>
 
             <div className="mt-6 space-y-3">
+              <p className="text-sm font-medium text-zinc-200">Audio quality</p>
+              <div className="grid grid-cols-3 border border-white/12 bg-[#0d0f13] p-1">
+                {audioQualityOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setQuality(option.value)}
+                    disabled={status === "converting"}
+                    className={`min-h-11 px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                      quality === option.value ? "bg-red-500 text-white shadow-sm shadow-red-500/30" : "text-zinc-300 hover:bg-white/[0.06]"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-3">
               <label className="text-sm font-medium text-zinc-200" htmlFor="youtube-url">
                 {mode === "single" ? "YouTube video URL" : "YouTube playlist URL"}
               </label>
@@ -526,7 +601,7 @@ export default function Home() {
                 className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 bg-red-500 px-5 font-semibold text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
               >
                 {status === "converting" ? (
-                  <span className="h-5 w-5 animate-spin border-2 border-white/30 border-t-white" />
+                  <ConvertingIcon />
                 ) : (
                   <DownloadIcon />
                 )}
@@ -602,16 +677,20 @@ export default function Home() {
               </div>
 
               {status === "converting" ? (
-                <div className="border border-white/10 bg-black/25 p-4">
+                <div className="space-y-4">
+                  <ConversionPulse progress={progressValue} />
+                  <div className="border border-white/10 bg-black/25 p-4">
                   <div className="flex items-center justify-between gap-3 text-sm">
                     <span className="font-medium text-white">{job?.stage || "Starting"}</span>
                     <span className="font-semibold text-cyan-100">{progressValue}%</span>
                   </div>
-                  <div className="mt-3 h-2.5 overflow-hidden bg-white/10">
+                  <div className="mt-3 h-3 overflow-hidden bg-white/10">
                     <div
-                      className="h-full bg-gradient-to-r from-red-500 via-amber-300 to-cyan-300 transition-[width] duration-300 ease-out"
+                      className="conversion-progress-fill relative h-full overflow-hidden bg-gradient-to-r from-red-500 via-amber-300 to-cyan-300 transition-[width] duration-300 ease-out"
                       style={{ width: `${progressValue}%` }}
-                    />
+                    >
+                      <span className="conversion-progress-shine absolute inset-y-0 w-24 bg-white/45" />
+                    </div>
                   </div>
                   <div className="mt-4 grid grid-cols-4 gap-2">
                     {steps.map((step) => {
@@ -620,7 +699,7 @@ export default function Home() {
                       return (
                         <div
                           key={step.label}
-                          className={`min-h-12 border px-2 py-2 text-center text-xs ${
+                          className={`relative min-h-12 overflow-hidden border px-2 py-2 text-center text-xs ${
                             stepState === "done"
                               ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100"
                               : stepState === "active"
@@ -628,7 +707,10 @@ export default function Home() {
                                 : "border-white/10 text-zinc-500"
                           }`}
                         >
-                          {step.label}
+                          {stepState === "active" ? (
+                            <span className="conversion-step-pulse absolute inset-x-2 bottom-1 h-0.5 bg-amber-200/70" />
+                          ) : null}
+                          <span className="relative z-10">{step.label}</span>
                         </div>
                       );
                     })}
@@ -648,6 +730,7 @@ export default function Home() {
                         <p className="mt-1 break-all font-medium text-zinc-100">{job.currentItem}</p>
                       </div>
                     ) : null}
+                  </div>
                   </div>
                 </div>
               ) : null}
@@ -681,6 +764,12 @@ export default function Home() {
                   <span>Mode</span>
                   <span className="font-medium text-zinc-100">
                     {mode === "playlist" ? "Playlist" : "Single video"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between border border-white/10 px-3 py-2">
+                  <span>Quality</span>
+                  <span className="font-medium text-zinc-100">
+                    {audioQualityOptions.find((option) => option.value === quality)?.label}
                   </span>
                 </div>
               </div>
