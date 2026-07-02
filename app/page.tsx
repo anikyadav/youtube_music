@@ -6,10 +6,10 @@ type ConversionStatus = "idle" | "converting" | "complete" | "error";
 type ConversionMode = "single" | "playlist";
 type AudioQuality = "default" | "high" | "best";
 
-const audioQualityOptions: Array<{ label: string; value: AudioQuality }> = [
-  { label: "Default", value: "default" },
-  { label: "High", value: "high" },
-  { label: "Best", value: "best" },
+const audioQualityOptions: Array<{ description: string; label: string; value: AudioQuality }> = [
+  { description: "Balanced file size", label: "Default", value: "default" },
+  { description: "Sharper MP3 output", label: "High", value: "high" },
+  { description: "Highest MP3 bitrate", label: "Best", value: "best" },
 ];
 const defaultAudioQuality: AudioQuality = "best";
 
@@ -126,6 +126,17 @@ function getFilename(response: Response) {
   const match = disposition?.match(/filename="?([^"]+)"?/i);
 
   return match?.[1] || "audio.mp3";
+}
+
+function isSupportedYouTubeUrl(value: string) {
+  try {
+    const parsedUrl = new URL(value);
+    const hostname = parsedUrl.hostname.toLowerCase().replace(/^www\./, "");
+
+    return hostname === "youtube.com" || hostname === "youtu.be" || hostname.endsWith(".youtube.com");
+  } catch {
+    return false;
+  }
 }
 
 function triggerDownload(href: string, filename: string) {
@@ -250,9 +261,25 @@ export default function Home() {
   const [displayedProgress, setDisplayedProgress] = useState(0);
   const [now, setNow] = useState(() => Date.now());
 
-  const canSubmit = useMemo(() => url.trim().length > 0 && status !== "converting", [status, url]);
+  const trimmedUrl = url.trim();
+  const hasUrl = trimmedUrl.length > 0;
+  const urlIsSupported = useMemo(() => !hasUrl || isSupportedYouTubeUrl(trimmedUrl), [hasUrl, trimmedUrl]);
+  const canSubmit = useMemo(
+    () => hasUrl && urlIsSupported && status !== "converting",
+    [hasUrl, status, urlIsSupported]
+  );
   const activeJobId = job?.id;
   const progressValue = Math.round(status === "complete" ? 100 : displayedProgress);
+  const selectedQuality = audioQualityOptions.find((option) => option.value === quality) || audioQualityOptions[0];
+  const outputLabel = mode === "playlist" ? "ZIP archive" : "MP3 file";
+  const statusTone =
+    status === "complete"
+      ? "Ready to download"
+      : status === "error"
+        ? "Action needed"
+        : status === "converting"
+          ? "Working"
+          : "Ready";
   const elapsedSeconds =
     status === "converting" && job?.createdAt
       ? Math.max(0, Math.floor((now - Date.parse(job.createdAt)) / 1000))
@@ -441,6 +468,15 @@ export default function Home() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!canSubmit) {
+      if (hasUrl && !urlIsSupported) {
+        setStatus("error");
+        setError("Use a YouTube or youtu.be link.");
+      }
+      return;
+    }
+
     setStatus("converting");
     setError(null);
     setPasteMessage(null);
@@ -458,7 +494,7 @@ export default function Home() {
       const response = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, mode, quality }),
+        body: JSON.stringify({ url: trimmedUrl, mode, quality }),
       });
 
       if (!response.ok) {
@@ -477,7 +513,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#0e0f12] text-zinc-100">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-5">
+        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
               Audio workspace
@@ -487,6 +523,9 @@ export default function Home() {
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-300">
+            <span className="border border-amber-300/20 bg-amber-300/[0.08] px-3 py-1.5 text-amber-100">
+              Best quality default
+            </span>
             <span className="border border-cyan-300/20 bg-cyan-300/[0.08] px-3 py-1.5 text-cyan-100">yt-dlp</span>
             <span className="border border-white/10 bg-white/[0.04] px-3 py-1.5">FFmpeg</span>
             <span className="border border-emerald-300/20 bg-emerald-300/[0.08] px-3 py-1.5 text-emerald-100">
@@ -507,8 +546,23 @@ export default function Home() {
               <div>
                 <h2 className="text-lg font-semibold text-white">Source video</h2>
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">
-                  Paste a YouTube URL and choose the output you want.
+                  {mode === "playlist" ? "Playlist links download as one ZIP archive." : "Single links download as one MP3 file."}
                 </p>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <div className="border border-white/10 bg-black/20 px-3 py-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Output</p>
+                <p className="mt-1 text-sm font-semibold text-white">{outputLabel}</p>
+              </div>
+              <div className="border border-white/10 bg-black/20 px-3 py-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Quality</p>
+                <p className="mt-1 text-sm font-semibold text-white">{selectedQuality.label}</p>
+              </div>
+              <div className="border border-white/10 bg-black/20 px-3 py-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Status</p>
+                <p className="mt-1 text-sm font-semibold text-white">{statusTone}</p>
               </div>
             </div>
 
@@ -552,11 +606,14 @@ export default function Home() {
                     type="button"
                     onClick={() => setQuality(option.value)}
                     disabled={status === "converting"}
-                    className={`min-h-11 px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                    className={`min-h-14 px-3 text-left text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                       quality === option.value ? "bg-red-500 text-white shadow-sm shadow-red-500/30" : "text-zinc-300 hover:bg-white/[0.06]"
                     }`}
                   >
-                    {option.label}
+                    <span className="block">{option.label}</span>
+                    <span className={`mt-0.5 block text-xs font-normal ${quality === option.value ? "text-red-50/80" : "text-zinc-500"}`}>
+                      {option.description}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -577,7 +634,13 @@ export default function Home() {
                       ? "https://www.youtube.com/watch?v=..."
                       : "https://www.youtube.com/playlist?list=..."
                   }
-                  className="min-h-12 flex-1 border border-white/12 bg-[#0d0f13] px-4 text-base text-white outline-none placeholder:text-zinc-600 focus:border-cyan-300"
+                  className={`min-h-12 flex-1 border bg-[#0d0f13] px-4 text-base text-white outline-none placeholder:text-zinc-600 ${
+                    hasUrl && !urlIsSupported
+                      ? "border-red-400 focus:border-red-300"
+                      : hasUrl
+                        ? "border-emerald-400/50 focus:border-emerald-300"
+                        : "border-white/12 focus:border-cyan-300"
+                  }`}
                   required
                   disabled={status === "converting"}
                 />
@@ -591,14 +654,18 @@ export default function Home() {
                   Paste
                 </button>
               </div>
-              {pasteMessage ? <p className="text-sm text-zinc-400">{pasteMessage}</p> : null}
+              <div className="min-h-6">
+                {pasteMessage ? <p className="text-sm text-zinc-400">{pasteMessage}</p> : null}
+                {hasUrl && !urlIsSupported ? <p className="text-sm text-red-200">Use a YouTube or youtu.be link.</p> : null}
+                {hasUrl && urlIsSupported ? <p className="text-sm text-emerald-200">YouTube link ready.</p> : null}
+              </div>
             </div>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 bg-red-500 px-5 font-semibold text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+                className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 bg-red-500 px-5 font-semibold text-white shadow-lg shadow-red-500/15 transition hover:bg-red-400 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400 disabled:shadow-none"
               >
                 {status === "converting" ? (
                   <ConvertingIcon />
@@ -616,7 +683,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => void startFresh()}
-                className="inline-flex min-h-12 items-center justify-center gap-2 border border-white/12 px-5 font-semibold text-zinc-200 transition hover:bg-white/[0.06]"
+                className="inline-flex min-h-12 items-center justify-center gap-2 border border-white/12 px-5 font-semibold text-zinc-200 transition hover:border-white/25 hover:bg-white/[0.06]"
               >
                 <RefreshIcon />
                 New conversion
@@ -633,9 +700,12 @@ export default function Home() {
             </div>
           </form>
 
-          <aside className="border border-white/10 bg-[#17191f] p-5 sm:p-6">
+          <aside className="border border-white/10 bg-[#17191f] p-5 shadow-2xl shadow-black/20 sm:p-6 lg:sticky lg:top-6">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold text-white">Status</h2>
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Job monitor</p>
+                <h2 className="mt-1 text-lg font-semibold text-white">Status</h2>
+              </div>
               {status === "converting" ? (
                 <span className="border border-amber-300/30 bg-amber-300/10 px-2.5 py-1 text-xs font-semibold text-amber-100">
                   {formatElapsed(elapsedSeconds)}
@@ -655,12 +725,17 @@ export default function Home() {
                         : "border-white/10 bg-black/25"
                 }`}
               >
-                <p className="text-sm font-semibold text-white">
-                  {status === "idle" ? "Ready" : null}
-                  {status === "converting" ? "Converting audio" : null}
-                  {status === "complete" ? "Conversion complete" : null}
-                  {status === "error" ? "Needs attention" : null}
-                </p>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-semibold text-white">
+                    {status === "idle" ? "Ready" : null}
+                    {status === "converting" ? "Converting audio" : null}
+                    {status === "complete" ? "Conversion complete" : null}
+                    {status === "error" ? "Needs attention" : null}
+                  </p>
+                  <span className="border border-white/10 bg-black/20 px-2 py-1 text-xs text-zinc-300">
+                    {outputLabel}
+                  </span>
+                </div>
                 <p className="mt-2 text-sm leading-6 text-zinc-300">
                   {status === "idle" ? "Waiting for a YouTube link." : null}
                   {status === "converting"
@@ -754,7 +829,9 @@ export default function Home() {
               <div className="grid gap-3 text-sm text-zinc-300">
                 <div className="flex items-center justify-between border border-white/10 px-3 py-2">
                   <span>Input</span>
-                  <span className="font-medium text-zinc-100">{url ? "URL added" : "Empty"}</span>
+                  <span className={`font-medium ${hasUrl && !urlIsSupported ? "text-red-200" : "text-zinc-100"}`}>
+                    {hasUrl ? (urlIsSupported ? "YouTube URL" : "Unsupported") : "Empty"}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between border border-white/10 px-3 py-2">
                   <span>Output</span>
@@ -768,9 +845,7 @@ export default function Home() {
                 </div>
                 <div className="flex items-center justify-between border border-white/10 px-3 py-2">
                   <span>Quality</span>
-                  <span className="font-medium text-zinc-100">
-                    {audioQualityOptions.find((option) => option.value === quality)?.label}
-                  </span>
+                  <span className="font-medium text-zinc-100">{selectedQuality.label}</span>
                 </div>
               </div>
             </div>
